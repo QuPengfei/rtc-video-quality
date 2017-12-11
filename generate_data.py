@@ -231,6 +231,81 @@ def openh264_command(job, temp_dir):
   encoded_files = [{'spatial-layer': 0, 'temporal-layer': 0, 'filename': encoded_filename}]
   return ([str(i) for i in command], encoded_files)
 
+def x264_command(job, temp_dir):
+  assert job['codec'] == 'h264'
+  # TODO(pbos): Consider AVC support.
+  assert job['num_spatial_layers'] == 1
+  # TODO(pbos): Add temporal-layer support (-numtl).
+  assert job['num_temporal_layers'] == 1
+
+  (fd, encoded_filename) = tempfile.mkstemp(dir=temp_dir, suffix=".264")
+  os.close(fd)
+
+  clip = job['clip']
+  res = str(clip['width']) + 'x' + str(clip['height'])
+
+  fps = int(clip['fps'] + 0.5)
+  bframe = 0
+
+  #"ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow, or placebo"
+  preset = 'veryslow'
+  if job['encoder'] == 'x265-medium':
+    preset = 'medium'
+  elif job['encoder'] == 'x265-placebo':
+    preset = 'placebo'
+
+  command = [
+    'x264/x264',
+    '--profile', 'main',
+    '--preset', preset,
+    '--vbv-bufsize', job['target_bitrates_kbps'][0]*2,
+    '--bitrate', job['target_bitrates_kbps'][0],
+    '--input-res', res,
+    '-b', bframe,
+    '--fps', fps,
+    '-o', encoded_filename,
+    clip['yuv_file'],
+  ]
+  encoded_files = [{'spatial-layer': 0, 'temporal-layer': 0, 'filename': encoded_filename}]
+  return ([str(i) for i in command], encoded_files)
+
+def x265_command(job, temp_dir):
+  assert job['codec'] == 'h265'
+  # TODO(pbos): Consider HEVC support.
+  assert job['num_spatial_layers'] == 1
+  # TODO(pbos): Add temporal-layer support (-numtl).
+  assert job['num_temporal_layers'] == 1
+
+  (fd, encoded_filename) = tempfile.mkstemp(dir=temp_dir, suffix=".265")
+  os.close(fd)
+
+  clip = job['clip']
+  res = str(clip['width']) + 'x' + str(clip['height'])
+
+  fps = int(clip['fps'] + 0.5)
+  bframe = 0
+
+  #"ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow, or placebo"
+  preset = 'veryslow'
+  if job['encoder'] == 'x265-medium':
+    preset = 'medium'
+  elif job['encoder'] == 'x265-placebo':
+    preset = 'placebo'
+
+  command = [
+    'x265/build/linux/x265',
+    '--profile', 'main',
+    '--preset', preset,
+    '--vbv-bufsize', job['target_bitrates_kbps'][0]*2,
+    '--bitrate', job['target_bitrates_kbps'][0],
+    '--input-res', res,
+    '-b', bframe,
+    '--fps', fps,
+    '-o', encoded_filename,
+    clip['yuv_file'],
+  ]
+  encoded_files = [{'spatial-layer': 0, 'temporal-layer': 0, 'filename': encoded_filename}]
+  return ([str(i) for i in command], encoded_files)
 
 def yami_command(job, temp_dir):
   assert job['num_spatial_layers'] == 1
@@ -266,6 +341,10 @@ encoder_commands = {
   'openh264' : openh264_command,
   'libvpx-rt' : libvpx_command,
   'yami' : yami_command,
+  'x264-medium' : x264_command,
+  'x264-placebo' : x264_command,
+  'x265-medium' : x265_command,
+  'x265-placebo' : x265_command,
 }
 
 
@@ -373,8 +452,8 @@ def decode_file(job, temp_dir, encoded_file):
     if job['codec'] in ['av1', 'vp8', 'vp9']:
       decoder = 'aom/aomdec' if job['codec'] == 'av1' else 'libvpx/vpxdec'
       subprocess.check_call([decoder, '--i420', '--codec=%s' % job['codec'], '-o', decoded_file, encoded_file, '--framestats=%s' % framestats_file], stdout=devnull, stderr=devnull)
-    elif job['codec'] == 'h264':
-      subprocess.check_call(['openh264/h264dec', encoded_file, decoded_file], stdout=devnull, stderr=devnull)
+    elif job['codec'] in ['h264', 'h265', 'avc', 'hevc']:
+      subprocess.check_call(['ffmpeg', '-y', '-i', encoded_file, decoded_file], stdout=devnull, stderr=devnull)
       # TODO(pbos): Generate H264 framestats.
       framestats_file = None
   return (decoded_file, framestats_file)
@@ -625,8 +704,9 @@ def main():
       find_absolute_path(False, 'libvpx/vpxdec')
     elif codec == 'av1':
       find_absolute_path(False, 'aom/aomdec')
-    elif codec == 'h264':
-      find_absolute_path(False, 'openh264/h264dec')
+    elif codec in ['h264', 'h265', 'avc', 'hevc']:
+      #decoder avc/hevc with ffmpeg
+      find_absolute_path(True, 'ffmpeg')
   if args.enable_vmaf:
     find_absolute_path(False, 'vmaf/run_vmaf')
 
